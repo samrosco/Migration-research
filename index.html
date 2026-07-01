@@ -38,6 +38,7 @@
      ⬜ WhatsApp: shown as "consultation clients only" — no public link (intentional)
      ⬜ Photo: upload "samuel-photo.jpg" to same folder, OR ask Claude to base64-embed it
      ✅ Formspree: https://formspree.io/f/mykqjqqp — LIVE
+     ✅ Stripe Payment Links: LIVE — all 4 packages wired
 =============================================================
 -->
 
@@ -176,6 +177,8 @@ textarea{resize:vertical;min-height:80px;line-height:1.6}
 .radio-group{display:flex;flex-direction:column;gap:8px}
 .radio-item{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;background:var(--surface)}
 .radio-item:hover{border-color:var(--gold);background:#fdf8ee}
+.radio-item.selected{border-color:var(--gold)!important;background:#fdf8ee!important;box-shadow:0 0 0 2px rgba(185,140,55,.25)!important}
+.radio-item.selected .radio-item-label{color:var(--gold)!important}
 .radio-item input[type=radio]{width:auto;margin-top:2px;accent-color:var(--gold);flex-shrink:0}
 .radio-item-label{font-size:.78rem;font-weight:700;color:var(--text);line-height:1}
 .radio-item-sub{font-size:.65rem;color:var(--muted);margin-top:2px;line-height:1.4}
@@ -557,7 +560,7 @@ footer a{color:var(--gold3)}
               <div><div class="radio-item-label">Starter — $25 (~₦40,000)</div><div class="radio-item-sub">Personalised dashboard only. Delivered in 48 hrs.</div></div>
             </label>
             <label class="radio-item">
-              <input type="radio" name="package" value="Standard $120"/>
+              <input type="radio" name="package" value="Standard $120" checked/>
               <div><div class="radio-item-label">Standard — $120 (~₦195,000) ⭐ Most Popular</div><div class="radio-item-sub">Dashboard + 1-hour Zoom consultation with Samuel.</div></div>
             </label>
             <label class="radio-item">
@@ -593,18 +596,20 @@ footer a{color:var(--gold3)}
           </div>
         </div>
 
-        <button type="submit" class="form-submit-btn">
-          Submit My Intake Form →
+        <button type="submit" class="form-submit-btn" id="pay-btn">
+          🔒 Proceed to Secure Payment →
         </button>
         <p class="form-note">
-          I'll review your submission and respond within 24 hours via email.<br>
-          Your information is kept strictly confidential and used only to build your dashboard.
+          Your form is submitted first, then you're taken to a secure Stripe checkout page to pay.<br>
+          Payment confirms your slot — your personalised dashboard is delivered within 48 hours.<br>
+          <span style="opacity:.7">Accepts all major debit/credit cards worldwide · Powered by Stripe</span>
         </p>
       </form>
 
       <div class="form-success" id="form-success" role="alert">
-        <h3>✅ Request received — thank you!</h3>
-        <p>Samuel will review your profile and be in touch within 24 hours via email.</p>
+        <h3>✅ Payment confirmed — you're all set!</h3>
+        <p>Your payment and intake form have been received. Samuel will review your profile and deliver your personalised dashboard to your email within <strong>48 hours</strong>.</p>
+        <p id="pay-ref-msg" style="font-size:.78rem;color:var(--muted);margin-top:10px"></p>
       </div>
     </div>
   </div>
@@ -622,32 +627,83 @@ footer a{color:var(--gold3)}
 </footer>
 
 <script>
+/* =====================================================
+   STRIPE PAYMENT LINKS — SETUP
+   1. Go to dashboard.stripe.com → Payment Links
+   2. Create one link per package, set price in USD
+   3. Paste each link URL below, replacing the placeholder
+   ===================================================== */
+const STRIPE_LINKS = {
+  'Starter $25':       'https://buy.stripe.com/6oU6oG20BeuC9SL8oA53O00',
+  'Standard $120':     'https://buy.stripe.com/dRm28q48J3PY9SL7kw53O01',
+  'Pro $220':          'https://buy.stripe.com/5kQaEW5cNaemfd57kw53O02',
+  'Full Package $380': 'https://buy.stripe.com/14AaEW7kVdqyaWP48k53O03'
+};
+
+/* Package card highlight */
+function highlightPackage(){
+  document.querySelectorAll('.radio-item').forEach(function(item){
+    const inp = item.querySelector('input[type=radio]');
+    if(inp && inp.checked){ item.classList.add('selected'); }
+    else { item.classList.remove('selected'); }
+  });
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.radio-item input[type=radio]').forEach(function(inp){
+    inp.addEventListener('change', highlightPackage);
+  });
+  highlightPackage();
+});
+
 /* Show/hide spouse field */
 function toggleSpouse(val){
-  const f=document.getElementById('spouse-field');
-  if(f) f.style.display=(val==='Married / Partner')?'block':'none';
+  const f = document.getElementById('spouse-field');
+  if(f) f.style.display = (val === 'Married / Partner') ? 'block' : 'none';
 }
 
-/* Form submission handler */
+/* Main handler: validate → submit intake to Formspree → redirect to Stripe */
 function handleSubmit(e){
-  const action=document.getElementById('intake-form').action;
-  /* Formspree is live — no setup guard needed */
-  /* Let Formspree handle the actual submission via fetch for SPA behaviour */
   e.preventDefault();
-  const form=e.target;
-  const data=new FormData(form);
-  fetch(form.action,{method:'POST',body:data,headers:{'Accept':'application/json'}})
-    .then(r=>{
-      if(r.ok){
-        form.style.display='none';
-        document.getElementById('form-success').style.display='block';
-        window.scrollTo({top:document.getElementById('form-success').offsetTop-80,behavior:'smooth'});
-      } else {
-        alert('Something went wrong submitting the form. Please email Samuel directly at migrationwithsam@gmail.com');
-      }
-    })
-    .catch(()=>{
-      alert('Network error. Please email Samuel directly at migrationwithsam@gmail.com');
+  const form  = e.target;
+  const name  = (document.getElementById('full-name')?.value || '').trim();
+  const email = (document.getElementById('email')?.value || '').trim();
+  const pkgEl = form.querySelector('input[name="package"]:checked');
+  const btn   = document.getElementById('pay-btn');
+
+  /* ── Validation ── */
+  if(!name || !email){
+    alert('Please fill in your full name and email address before proceeding.');
+    return;
+  }
+  if(!pkgEl){
+    alert('Please select a package (Section 05) before proceeding to payment.');
+    document.querySelector('.radio-group')?.scrollIntoView({behavior:'smooth', block:'center'});
+    return;
+  }
+
+  const stripeLink = STRIPE_LINKS[pkgEl.value];
+
+  /* ── Guard: Stripe links not yet configured ── */
+  if(!stripeLink || stripeLink.includes('_HERE')){
+    alert('⚙️ Payment not yet configured.\n\nSamuel: paste your Stripe Payment Link URLs into the STRIPE_LINKS object at the bottom of index.html.\n\nCreate them at dashboard.stripe.com → Payment Links.');
+    return;
+  }
+
+  /* ── Lock button while submitting ── */
+  if(btn){ btn.disabled = true; btn.textContent = 'Submitting your form...'; }
+
+  /* ── Step 1: Submit intake form to Formspree ── */
+  const data = new FormData(form);
+  fetch(form.action, {method:'POST', body:data, headers:{'Accept':'application/json'}})
+    .finally(() => {
+      /* Step 2: Redirect to Stripe Payment Link regardless of Formspree result.
+         Stripe pre-fills client email and passes their name as a reference.
+         Samuel receives: Formspree email (intake data) + Stripe email (payment). */
+      const url = stripeLink
+        + '?prefilled_email=' + encodeURIComponent(email)
+        + '&client_reference_id=' + encodeURIComponent(name.replace(/\s+/g, '_').substring(0, 64));
+      if(btn){ btn.textContent = 'Redirecting to payment...'; }
+      window.location.href = url;
     });
 }
 </script>
