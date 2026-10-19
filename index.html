@@ -231,7 +231,7 @@ footer a{color:var(--gold3)}
 <div class="stats-strip" aria-label="Key statistics">
   <div class="stat"><div class="stat-val">4</div><div class="stat-lbl">Countries Covered</div></div>
   <div class="stat"><div class="stat-val">3+</div><div class="stat-lbl">Professions Served</div></div>
-  <div class="stat"><div class="stat-val">8yrs</div><div class="stat-lbl">Migration Experience</div></div>
+  <div class="stat"><div class="stat-val">10yrs</div><div class="stat-lbl">Migration Experience</div></div>
   <div class="stat"><div class="stat-val">🇨🇦</div><div class="stat-lbl">Canadian Citizen</div></div>
 </div>
 
@@ -706,6 +706,17 @@ function handleSubmit(e){
       window.location.href = url;
     });
 }
+</script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var q=new URLSearchParams(window.location.search);
+  if(q.get('paid')==='1'){
+    var f=document.getElementById('intake-form');
+    if(f){f.style.display='none';}
+    var el=document.getElementById('form-success');
+    if(el){el.style.display='block';el.scrollIntoView({behavior:'smooth',block:'center'});}
+  }
+});
 </script>
 </body>
 </html>
